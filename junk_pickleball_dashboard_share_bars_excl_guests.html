@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Junk Pickleball – Dashboard</title>
+  <!-- Chart.js & PapaParse (CSV) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root{
+      --bg:#0b0b0b;          /* black */
+      --card:#121417;        /* dark gray card */
+      --ink:#f5f5f5;         /* near-white text */
+      --muted:#a3a3a3;       /* gray text */
+      --accent:#16a34a;      /* green accent */
+      --line:#262626;        /* divider */
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
+    header{display:flex;align-items:center;gap:14px;padding:18px 20px;border-bottom:1px solid var(--line);background:#0f1113;position:sticky;top:0;z-index:10}
+    header h1{font-size:20px;margin:0;font-weight:800}
+    .icons{display:flex;gap:8px;align-items:center;color:var(--accent)}
+    .icons svg{height:28px;width:28px}
+    main{max-width:1060px;margin:20px auto;padding:0 16px}
+    .bar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin-bottom:16px}
+    .bar .field{display:flex;flex-direction:column;gap:6px}
+    label{font-size:12px;color:var(--muted)}
+    input[type="date"], input[type="text"], select{height:38px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#0f1113;color:var(--ink)}
+    .toggle{display:flex;align-items:center;gap:8px;color:var(--ink)}
+    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}
+    .card{background:var(--card);padding:16px 14px;border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 0 rgba(0,0,0,.4)}
+    .kpi-title{font-size:12px;color:var(--muted)}
+    .kpi-value{font-size:22px;font-weight:800;margin-top:4px}
+
+    .grid{display:grid;grid-template-columns:1fr;gap:14px}
+    .chart-card{background:var(--card);padding:14px;border:1px solid var(--line);border-radius:16px}
+    .chart-card h3{margin:0 0 10px;font-size:14px;color:var(--muted)}
+    /* Chart sizing via container to prevent runaway growth */
+    .chartbox{position:relative;width:100%;aspect-ratio:16/9;max-height:320px}
+    .chartbox canvas{position:absolute;inset:0;width:100% !important;height:100% !important;display:block}
+    .chartbox.share{aspect-ratio:auto;max-height:420px}
+    @media(min-width:900px){
+      .grid{grid-template-columns:1fr 1fr}
+      .chartbox{max-height:360px}
+      .chartbox.share{max-height:420px}
+    }
+      canvas{height:260px}
+    }
+    .table{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--line);font-size:14px}
+    th{background:#0f1113;text-align:left;color:var(--muted);font-weight:600}
+    tfoot td{font-weight:700}
+    .hint{font-size:12px;color:var(--muted);margin:8px 0}
+    @media(min-width:900px){
+      .cards{grid-template-columns:repeat(4,1fr)}
+    }
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--line);border-radius:999px;background:#0f1113;font-size:12px;color:var(--muted)}
+    .accent{color:var(--accent)}
+    .footer{margin:20px 0;color:var(--muted);font-size:12px;text-align:center}
+
+    /* === Fun Facts (added, visual-only) === */
+    .funfacts{display:grid;grid-template-columns:1fr;gap:12px;margin:12px 0 20px}
+    .fact-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.4)}
+    .fact-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg, rgba(22,163,74,0.95), rgba(22,163,74,0.25));border-top-left-radius:14px;border-bottom-left-radius:14px}
+    .fact-title{font-size:12px;color:var(--muted);margin:0 0 6px;letter-spacing:.2px}
+    .fact-value{font-size:18px;font-weight:800}
+    @media(min-width:900px){.funfacts{grid-template-columns:repeat(3,1fr)}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="icons" aria-hidden="true">
+      <!-- Paddle icon -->
+      <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" role="img" aria-label="paddle"><rect x="6" y="6" rx="10" ry="10" width="40" height="30"></rect><rect x="24" y="36" width="8" height="16" rx="2"></rect></svg>
+      <!-- Ball icon -->
+      <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" role="img" aria-label="ball"><circle cx="46" cy="14" r="10"></circle><circle cx="42" cy="10" r="2"></circle><circle cx="50" cy="18" r="2"></circle><circle cx="50" cy="10" r="2"></circle><circle cx="42" cy="18" r="2"></circle></svg>
+    </div>
+    <h1>Junk Pickleball — Dashboard</h1>
+    <span class="chip" title="Guests are grouped by default">Guests grouped</span>
+  </header>
+
+  <main>
+    <p class="hint">Tip: publish your Google Sheet to the web as CSV and paste the URL below. The dashboard auto-refreshes on load. (We ship with a demo dataset so you can try it instantly.)</p>
+
+    <div class="bar">
+      <div class="field" style="flex:1 1 340px">
+        <label for="csvUrl">CSV URL (Sessions tab)</label>
+        <input id="csvUrl" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv" />
+      </div>
+      <div class="field">
+        <label for="from">From</label>
+        <input id="from" type="date" />
+      </div>
+      <div class="field">
+        <label for="to">To</label>
+        <input id="to" type="date" />
+      </div>
+      <div class="field toggle">
+        <input id="groupGuests" type="checkbox" checked />
+        <label for="groupGuests">Group Guests</label>
+      </div>
+      <button id="loadBtn" class="chip" style="border-color:var(--accent);color:var(--accent)">Load Data</button>
+    </div>
+
+    <section class="cards" id="kpis">
+      <div class="card"><div class="kpi-title">Total Sessions</div><div class="kpi-value" id="kpiSessions">—</div></div>
+      <div class="card"><div class="kpi-title">Unique Players (incl. Guests)</div><div class="kpi-value" id="kpiPlayers">—</div></div>
+      <div class="card"><div class="kpi-title">Avg Players / Session</div><div class="kpi-value" id="kpiAvg">—</div></div>
+      <div class="card"><div class="kpi-title">Total Court Costs</div><div class="kpi-value" id="kpiCost">—</div></div>
+    </section>
+
+    <!-- === Fun Facts (added) === -->
+    <section class="funfacts" id="funfacts">
+      <div class="fact-card"><div class="fact-title">🏆 Most Active Player</div><div class="fact-value" id="ffMostActive">—</div></div>
+      <div class="fact-card"><div class="fact-title">👥 Biggest Session (players)</div><div class="fact-value" id="ffBiggestSession">—</div></div>
+      <div class="fact-card"><div class="fact-title">📅 Most Common Day</div><div class="fact-value" id="ffCommonDay">—</div></div>
+    </section>
+
+    <section class="grid">
+      <div class="chart-card">
+        <h3>Monthly Attendance (Total Player Appearances)</h3>
+        <div class="chartbox"><canvas id="chartAttendance"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Player Leaderboard (Sessions Attended)</h3>
+        <div class="chartbox"><canvas id="chartLeaderboard"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Attendance Share (excluding Guests)</h3>
+        <div class="chartbox share"><canvas id="chartShare"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Monthly Court Costs</h3>
+        <div class="chartbox"><canvas id="chartCosts"></canvas></div>
+      </div>
+    </section>
+
+    <section class="table">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:120px">Date</th>
+            <th>Players</th>
+            <th style="width:120px">Players #</th>
+            <th style="width:120px">Hours</th>
+            <th style="width:140px">CPP</th>
+            <th style="width:140px">Total Cost</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="5">Totals</td>
+            <td id="tfootTotal">—</td>
+          </tr>
+        </tfoot>
+      </table>
+    </section>
+
+    <div class="footer">Dark theme • Gradient green charts • Mobile-ready</div>
+  </main>
+
+  <script>
+  // -------------------
+  // CONFIG & FALLBACK DATA (Apr–Aug 2025)
+  // -------------------
+  const CONFIG = {
+    CSV_URL: "", // Paste your published CSV URL here or in the input box.
+    DATE_MIN: "2025-04-01",
+    DATE_MAX: "2025-08-31",
+  };
+
+  const DEMO = [
+    ["2025-04-10","Thursday","Big Kim, Cake, Neil, Kevin, Jana, Tommy, Gio",280,40.00,2],
+    ["2025-04-23","Wednesday","Tommy, Jana, Gio, Neil, Kevin",280,56.00,2],
+    ["2025-04-30","Wednesday","Tommy, Big Kim, Neil, Kevin, Jana, Cake, Conor",280,40.00,2],
+    ["2025-05-08","Thursday","Tommy, Cake, Conor, Donna, Gio, Jak, Jess, Kevin, Lincoln, Neil, Leslie, Guest 1, Guest 2",560,43.08,4],
+    ["2025-05-15","Thursday","Neil, Conor, Donna, Jak, Cake, Kevin, Jana, Guest 3",560,70.00,4],
+    ["2025-05-22","Thursday","Conor, Gio, Jana, Lincoln, Neil, Kevin",560,93.33,4],
+    ["2025-05-27","Tuesday","Gio, Jak, Jana, Kevin, Leslie, Neil, Tommy, Guest 4",560,70.00,4],
+    ["2025-06-03","Tuesday","Conor, Donna, Gio, Jak, Jana, Leslie, Neil, Tommy, Guest 1, Guest 4",560,56.00,4],
+    ["2025-06-10","Tuesday","Donna, Jak, Jana, Kevin, Leslie, Neil, Tommy, Guest 2, Guest 3",560,62.22,4],
+    ["2025-06-17","Tuesday","Conor, Jak, Jana, Kevin, Leslie, Neil, Tommy, Guest 5, Guest 6, Guest 7, Guest 8",560,50.91,4],
+    ["2025-07-03","Thursday","Big Kim, Conor, Jana, Kevin, Tommy, Neil, Wes",560,80.00,4],
+    ["2025-07-09","Wednesday","Jana, Neil, Tommy, Wes, Guest 1",280,56.00,2],
+    ["2025-07-16","Wednesday","Jana, Neil, Tommy, Wes",280,70.00,2],
+    ["2025-07-24","Thursday","Donna, Jak, Kevin, Leslie, Jana, Tommy",280,46.67,2],
+    ["2025-07-31","Thursday","Donna, Jak, Jana, Leslie, Neil, Tommy",280,46.67,2],
+    ["2025-08-08","Friday","Cake, Donna, Gio, Jak, Jana, Kevin, Neil, Tommy",560,70.00,4],
+    ["2025-08-14","Thursday","Donna, Jak, Jana, Kevin, Leslie, Neil, Tommy, Wes, Enoch",560,62.22,4],
+    ["2025-08-20","Wednesday","Big Kim, Cake, Conor, Jak, Jana, Kevin, Leslie, Tommy, Wes, Enoch",560,56.00,4],
+    ["2025-08-28","Thursday","Big Kim, Cake, Conor, Jana, Jak, Wes, Leslie, Enoch, Kevin, Guest 1",560,56.00,4],
+  ];
+
+  // -------------------
+  // Utilities
+  // -------------------
+  const $ = sel => document.querySelector(sel);
+  const fmtMoney = n => n.toLocaleString(undefined,{style:'currency',currency:'USD'});
+  const toISO = d => new Date(d).toISOString().slice(0,10);
+  const monthKey = d => new Date(d).toISOString().slice(0,7);
+  const isGuest = n => /^guest/i.test(n.trim());
+
+  function splitPlayers(s){
+    return (s||"").split(",").map(x=>x.trim()).filter(Boolean);
+  }
+
+  function normalizeRows(rows){
+    return rows.map(r=>({
+      date:new Date(r[0]),
+      weekday:r[1],
+      players:splitPlayers(r[2]),
+      total_cost:+r[3],
+      cpp:+r[4],
+      hours:+r[5]
+    }));
+  }
+
+  function filterRange(data, from, to){
+    return data.filter(x=>x.date>=from && x.date<=to);
+  }
+
+  function groupBy(arr, keyFn){
+    const m = new Map();
+    for(const it of arr){
+      const k = keyFn(it);
+      if(!m.has(k)) m.set(k,[]);
+      m.get(k).push(it);
+    }
+    return m;
+  }
+
+  // -------------------
+  // Data load (CSV or demo)
+  // -------------------
+  async function loadData(csvUrl){
+    if(!csvUrl){
+      return normalizeRows(DEMO);
+    }
+    const text = await fetch(csvUrl + (csvUrl.includes("?")?"&":"?") + "ts="+Date.now()).then(r=>r.text());
+    const parsed = Papa.parse(text, {header:true});
+    // Expected headers: date, weekday, players, total_cost, cpp, hours (case-insensitive ok)
+    const rows = parsed.data.filter(r=>r.date);
+    const ordered = rows.map(r=>[
+      r.date, r.weekday, r.players, r.total_cost, r.cpp, r.hours
+    ]);
+    return normalizeRows(ordered);
+  }
+
+  // -------------------
+  // Charts (Chart.js instances) — Dark theme + green gradients
+  // -------------------
+  let charts = {};
+  function destroyCharts(){ Object.values(charts).forEach(ch=>ch?.destroy()); charts={}; }
+
+  function renderCharts(data, groupGuests){
+    const perMonth = [...groupBy(data, x=>monthKey(x.date))]
+      .map(([k,v])=>({month:k, totalPlayers:v.reduce((a,b)=>a+b.players.length,0)}))
+      .sort((a,b)=>a.month.localeCompare(b.month));
+
+    const byAppearance = new Map();
+    for(const s of data){
+      const seen = new Set();
+      for(let p of s.players){
+        p = groupGuests && isGuest(p) ? 'Guests' : p;
+        if(seen.has(p)) continue; // count session once per player
+        seen.add(p);
+        byAppearance.set(p, (byAppearance.get(p)||0)+1);
+      }
+    }
+    const leaderboard = [...byAppearance.entries()].sort((a,b)=>b[1]-a[1]).slice(0,12);
+    const perMonthCost = [...groupBy(data, x=>monthKey(x.date))]
+      .map(([k,v])=>({month:k, total: v.reduce((a,b)=>a+b.total_cost,0)}))
+      .sort((a,b)=>a.month.localeCompare(b.month));
+
+    // Global Chart.js styling for dark theme
+    Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--muted');
+    Chart.defaults.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--line');
+
+    function greenGradient(ctx){
+      const g = ctx.createLinearGradient(0,0,0,260);
+      g.addColorStop(0,'rgba(34,197,94,0.95)');   // bright green
+      g.addColorStop(1,'rgba(134,239,172,0.25)'); // light green
+      return g;
+    }
+    const green = '#22c55e';
+
+    // Attendance line
+    const ctxA = document.getElementById('chartAttendance').getContext('2d');
+    charts.attendance = new Chart(ctxA, {
+      type:'line', data:{
+        labels: perMonth.map(x=>x.month),
+        datasets:[{label:'Total Player Appearances', data: perMonth.map(x=>x.totalPlayers),
+          borderColor: green, backgroundColor: greenGradient(ctxA), fill:true, tension:0.35}]
+      }, options:{responsive:true, maintainAspectRatio:true,
+        plugins:{legend:{labels:{color:'#e5e5e5'}}},
+        scales:{x:{ticks:{color:'#d4d4d4'}}, y:{ticks:{color:'#d4d4d4'}}}
+      }
+    });
+
+    // Leaderboard bar
+    const ctxB = document.getElementById('chartLeaderboard').getContext('2d');
+    charts.leaderboard = new Chart(ctxB, {
+      type:'bar', data:{
+        labels: leaderboard.map(x=>x[0]),
+        datasets:[{label:'Sessions', data: leaderboard.map(x=>x[1]),
+          backgroundColor: greenGradient(ctxB), borderColor: green, borderWidth:1}]
+      }, options:{responsive:true, maintainAspectRatio:true,
+        plugins:{legend:{labels:{color:'#e5e5e5'}}},
+        scales:{x:{ticks:{color:'#d4d4d4'}}, y:{ticks:{color:'#d4d4d4'}}}
+      }
+    });
+
+    // Attendance Share — horizontal bar (all players, excluding Guests)
+    const shareEntries = [...byAppearance.entries()].filter(([name]) => name !== 'Guests');
+    // Sort descending, but keep everyone
+    const shareSorted = shareEntries.sort((a,b)=>b[1]-a[1]);
+    const labelsShare = shareSorted.map(x=>x[0]);
+    const dataShare = shareSorted.map(x=>x[1]);
+
+    const shareCanvas = document.getElementById('chartShare');
+    const shareBox = shareCanvas.closest('.chartbox');
+    const rows = labelsShare.length;
+    const target = Math.min(28*rows + 60, 420); // scale height to rows, cap at 420px
+    shareBox.style.height = target + 'px';
+
+    charts.share = new Chart(shareCanvas.getContext('2d'), {
+      type:'bar',
+      data:{ labels: labelsShare, datasets:[{ label:'Attendance Instances', data: dataShare, backgroundColor:'#22c55e', borderColor:'#22c55e' }] },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        indexAxis:'y',
+        plugins:{ legend:{ display:false } },
+        scales:{
+          x:{ ticks:{ color:'#d4d4d4' }, grid:{ display:false } },
+          y:{ ticks:{ color:'#d4d4d4', autoSkip:false }, grid:{ display:false } }
+        }
+      }
+    });
+
+    // Monthly costs line
+    const ctxC = document.getElementById('chartCosts').getContext('2d');
+    charts.costs = new Chart(ctxC, {
+      type:'line', data:{
+        labels: perMonthCost.map(x=>x.month),
+        datasets:[{label:'Total Cost ($)', data: perMonthCost.map(x=>x.total),
+          borderColor: green, backgroundColor: greenGradient(ctxC), fill:true, tension:0.35}]
+      }, options:{responsive:true, maintainAspectRatio:true,
+        plugins:{legend:{labels:{color:'#e5e5e5'}}},
+        scales:{x:{ticks:{color:'#d4d4d4'}}, y:{ticks:{color:'#d4d4d4'}}}
+      }
+    });
+  }
+
+  // -------------------
+  // KPIs + Fun Facts + Table (Fun Facts added)
+  // -------------------
+  function renderKpis(data, groupGuests){
+    const sessions = data.length;
+    const uniq = new Set();
+    let appearances = 0, totalCost = 0;
+    const dayCounts = new Map();
+
+    for(const s of data){
+      const seen = new Set();
+      totalCost += s.total_cost;
+      dayCounts.set(s.weekday, (dayCounts.get(s.weekday)||0)+1);
+      for(let p of s.players){
+        const name = groupGuests && isGuest(p) ? 'Guests' : p;
+        appearances++;
+        seen.add(name);
+      }
+      seen.forEach(n=>uniq.add(n));
+    }
+    const avgPlayers = (appearances / sessions) || 0;
+    $('#kpiSessions').textContent = sessions;
+    $('#kpiPlayers').textContent = uniq.size;
+    $('#kpiAvg').textContent = avgPlayers.toFixed(1);
+    $('#kpiCost').textContent = fmtMoney(totalCost);
+
+    // --- Fun Facts ---
+    // Most active player (per-session attendance), ignoring aggregated "Guests"
+    const appearanceMap = new Map();
+    for(const s of data){
+      const seen = new Set();
+      for(let p of s.players){
+        const name = groupGuests && isGuest(p) ? 'Guests' : p;
+        if(seen.has(name)) continue; // count once per session
+        seen.add(name);
+        appearanceMap.set(name,(appearanceMap.get(name)||0)+1);
+      }
+    }
+    const top = [...appearanceMap.entries()].filter(([n])=>n!=="Guests").sort((a,b)=>b[1]-a[1])[0];
+    const biggest = data.reduce((m,s)=>Math.max(m,s.players.length),0);
+    const dayTop = [...dayCounts.entries()].sort((a,b)=>b[1]-a[1])[0];
+
+    const elMost = document.getElementById('ffMostActive');
+    const elBig = document.getElementById('ffBiggestSession');
+    const elDay = document.getElementById('ffCommonDay');
+    if(elMost) elMost.textContent = top ? `${top[0]} — ${top[1]} sessions` : '—';
+    if(elBig)  elBig.textContent  = biggest || '—';
+    if(elDay)  elDay.textContent  = dayTop ? `${dayTop[0]} — ${dayTop[1]} sessions` : '—';
+  }
+
+  function renderTable(data){
+    const tbody = $('#tbody');
+    tbody.innerHTML = '';
+    let total = 0;
+    for(const s of data){
+      total += s.total_cost;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${toISO(s.date)}</td>
+        <td>${s.players.join(', ')}</td>
+        <td>${s.players.length}</td>
+        <td>${s.hours}</td>
+        <td>${fmtMoney(s.cpp)}</td>
+        <td>${fmtMoney(s.total_cost)}</td>`;
+      tbody.appendChild(tr);
+    }
+    const tfoot = document.getElementById('tfootTotal'); if(tfoot) tfoot.textContent = fmtMoney(total);
+  }
+
+  // -------------------
+  // Boot (unchanged structure)
+  // -------------------
+  async function boot(){
+    // init controls
+    $('#from').value = CONFIG.DATE_MIN; $('#to').value = CONFIG.DATE_MAX;
+    $('#csvUrl').value = CONFIG.CSV_URL;
+
+    async function refresh(){
+      const csvUrl = $('#csvUrl').value.trim();
+      let data = await loadData(csvUrl);
+      // filter by date
+      const from = new Date($('#from').value||CONFIG.DATE_MIN);
+      const to = new Date($('#to').value||CONFIG.DATE_MAX);
+      data = data.filter(x=>x.date>=from && x.date<=to);
+      const groupGuests = $('#groupGuests').checked;
+
+      destroyCharts();
+      renderKpis(data, groupGuests);
+      renderCharts(data, groupGuests);
+      renderTable(data);
+    }
+
+    $('#loadBtn').addEventListener('click', refresh);
+    $('#from').addEventListener('change', refresh);
+    $('#to').addEventListener('change', refresh);
+    $('#groupGuests').addEventListener('change', refresh);
+
+    // first render (demo)
+    refresh();
+  }
+
+  boot();
+  </script>
+</body>
+</html>
