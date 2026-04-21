@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Junk Pickleball — Live Dashboard (v2)</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root{
+      --bg:#0b0b0b;
+      --card:#121417;
+      --ink:#f5f5f5;
+      --muted:#a3a3a3;
+      --accent:#16a34a;
+      --line:#262626;
+      --danger:#ef4444;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);background:#0f1113;position:sticky;top:0;z-index:10}
+    h1{font-size:20px;margin:0;font-weight:800}
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:#0f1113;font-size:12px;color:var(--muted)}
+    main{max-width:1120px;margin:20px auto;padding:0 16px}
+
+    .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:16px}
+    .field{display:flex;flex-direction:column;gap:6px}
+    label{font-size:12px;color:var(--muted)}
+    input[type="date"],button{height:38px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#0f1113;color:var(--ink)}
+    button{cursor:pointer}
+    button.primary{border-color:var(--accent);color:var(--accent);font-weight:700}
+    .source-status{padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-size:12px;background:#0f1113;color:var(--muted)}
+    .source-status.live{border-color:rgba(22,163,74,.6);color:#86efac}
+    .source-status.snapshot{border-color:rgba(245,158,11,.6);color:#fcd34d}
+    .source-status.error{border-color:rgba(239,68,68,.6);color:#fecaca}
+
+    .state{display:none;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#0f1113;margin-bottom:12px}
+    .state.show{display:block}
+    .state.error{border-color:rgba(239,68,68,.5);color:#fecaca}
+
+    .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}
+    .card{background:var(--card);padding:14px;border:1px solid var(--line);border-radius:16px}
+    .kpi-title{font-size:12px;color:var(--muted)}
+    .kpi-value{font-size:24px;font-weight:800}
+    .top-section{margin:16px 0}
+    .top-section h2{margin:0 0 10px;font-size:16px}
+    .top-grid{display:grid;grid-template-columns:1fr;gap:10px}
+    .story-card{
+      background:linear-gradient(180deg, rgba(22,163,74,.15), rgba(18,20,23,.9));
+      border:1px solid rgba(22,163,74,.35);
+      border-radius:14px;
+      padding:12px;
+    }
+    .story-title{font-size:12px;color:#bbf7d0;margin-bottom:4px}
+    .story-main{font-size:18px;font-weight:800;color:#f0fdf4}
+    .story-sub{font-size:12px;color:var(--muted)}
+    .award-grid{display:grid;grid-template-columns:1fr;gap:10px}
+    .award-card{
+      background:linear-gradient(180deg, rgba(15,23,42,.95), rgba(18,20,23,.95));
+      border:1px solid rgba(148,163,184,.35);
+      border-radius:14px;
+      padding:12px;
+    }
+    .award-name{font-size:13px;color:#cbd5e1;font-weight:700}
+    .award-winner{font-size:18px;font-weight:800;margin:4px 0}
+    .award-stat{font-size:12px;color:#bbf7d0}
+    .award-note{font-size:12px;color:var(--muted)}
+
+    .grid{display:grid;grid-template-columns:1fr;gap:14px}
+    .chart-card,.table-card{background:var(--card);padding:14px;border:1px solid var(--line);border-radius:16px}
+    .chart-card h3,.table-card h3{margin:0 0 10px;font-size:14px;color:var(--muted)}
+    .chartbox{position:relative;width:100%;height:320px}
+
+    .table-wrap{overflow:auto;max-height:520px}
+    table{width:100%;border-collapse:collapse;min-width:760px}
+    th,td{padding:10px;border-bottom:1px solid var(--line);font-size:14px;text-align:left}
+    th{position:sticky;top:0;background:#0f1113;color:var(--muted);font-weight:600}
+
+    .footer{margin:18px 0;color:var(--muted);font-size:12px;text-align:center}
+
+    @media(min-width:800px){
+      .cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+      .grid{grid-template-columns:1fr 1fr}
+      .table-card{grid-column:1 / -1}
+      .top-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .award-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Junk Pickleball — Live Dashboard (v2)</h1>
+    <span class="chip">Live Google Sheets feed</span>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <div class="field">
+        <label for="fromDate">From</label>
+        <input id="fromDate" type="date" />
+      </div>
+      <div class="field">
+        <label for="toDate">To</label>
+        <input id="toDate" type="date" />
+      </div>
+      <button id="refreshBtn" class="primary">Refresh</button>
+      <span class="chip">Guests excluded: <code>^Guest\s+\d+$</code></span>
+      <span id="dataSourceStatus" class="source-status">Data source: loading…</span>
+    </div>
+
+    <div id="loadingState" class="state">Loading live attendance data…</div>
+    <div id="errorState" class="state error"></div>
+
+    <section class="top-section">
+      <h2>Highlights</h2>
+      <div id="highlightsGrid" class="top-grid"></div>
+    </section>
+
+    <section class="top-section">
+      <h2>Awards</h2>
+      <div id="awardsGrid" class="award-grid"></div>
+    </section>
+
+    <section class="cards">
+      <div class="card"><div class="kpi-title">Total Sessions</div><div id="kpiSessions" class="kpi-value">—</div></div>
+      <div class="card"><div class="kpi-title">Total Players (non-guest)</div><div id="kpiPlayers" class="kpi-value">—</div></div>
+      <div class="card"><div class="kpi-title">Avg Players / Session</div><div id="kpiAvg" class="kpi-value">—</div></div>
+      <div class="card"><div class="kpi-title">Last Sync Date</div><div id="kpiSync" class="kpi-value">—</div></div>
+    </section>
+
+    <section class="grid">
+      <div class="chart-card">
+        <h3>Attendance Leaders</h3>
+        <div class="chartbox"><canvas id="leadersChart"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Attendance Rate Since Joining (min 5 sessions)</h3>
+        <div class="chartbox"><canvas id="rateChart"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Recent Form (last 10 sessions)</h3>
+        <div class="chartbox"><canvas id="formChart"></canvas></div>
+      </div>
+
+      <div class="table-card">
+        <h3>Player Stats</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Player Name</th>
+                <th>Total Sessions</th>
+                <th>Attendance Rate %</th>
+                <th>Last Seen Date</th>
+                <th>Current Streak</th>
+                <th>Longest Streak</th>
+              </tr>
+            </thead>
+            <tbody id="playerTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">Client-side only • attendance_export as source of truth • <span id="buildTag">Build: loading…</span></div>
+  </main>
+
+  <script src="./dashboard-v2.js"></script>
+</body>
+</html>
