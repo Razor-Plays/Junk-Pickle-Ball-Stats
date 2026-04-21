@@ -98,6 +98,8 @@
     return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
   }
 
+  const pct = (n) => `${(n * 100).toFixed(1)}%`;
+
   function formatNames(names) {
     if (!names.length) return '—';
     if (names.length === 1) return names[0];
@@ -289,39 +291,49 @@
     const el = $('#highlightsGrid');
     const recentWindow = Math.min(10, sessions.length);
     const regulars = players.filter((p) => p.totalAttended >= 8);
+    const latestIndex = sessions.length - 1;
 
     const streak = topBy(players, (p) => p.currentStreak, { minValue: 1 });
     const recent = topBy(players, (p) => p.last10, { minValue: 1 });
     const rate = topBy(regulars, (p) => Number((p.attendanceRate * 100).toFixed(1)), { minValue: 1 });
-    const improver = topBy(players.filter((p) => p.improveDelta > 0), (p) => p.improveDelta, { minValue: 1 });
+
+    // Assumption: comeback watch = meaningful prior contributor (8+ sessions) absent for last 6 sessions.
+    const comebackPool = players
+      .map((p) => ({
+        ...p,
+        lastSeenIdx: sessions.findIndex((s) => s.date === p.lastAttendanceDate),
+      }))
+      .filter((p) => p.totalAttended >= 8 && p.lastSeenIdx >= 0 && (latestIndex - p.lastSeenIdx) >= 6)
+      .sort((a, b) => b.totalAttended - a.totalAttended || b.longestStreak - a.longestStreak);
+    const comeback = comebackPool[0];
 
     const cards = [];
     if (streak.leaders.length) {
       cards.push({
-        title: '🔥 Hot streak',
+        title: '🔥 Hot Streak',
         main: `${formatNames(streak.leaders.map((p) => p.playerName))} — ${streak.value} straight`,
-        sub: 'Momentum is live heading into the next run.',
+        sub: 'Carrying the best active run right now.',
       });
     }
     if (recent.leaders.length) {
       cards.push({
-        title: '🎯 Most active lately',
+        title: '🎯 Most Active (Last 10)',
         main: `${formatNames(recent.leaders.map((p) => p.playerName))} — ${recent.value}/${recentWindow}`,
-        sub: 'Showing up strong in the latest sessions.',
+        sub: 'Setting the pace in recent sessions.',
       });
     }
     if (rate.leaders.length) {
       cards.push({
-        title: '📈 Best regular rate',
+        title: '📈 Best Attendance Rate',
         main: `${formatNames(rate.leaders.map((p) => p.playerName))} — ${rate.value.toFixed(1)}%`,
-        sub: 'Best attendance rate among regulars.',
+        sub: 'Best rate among established regulars.',
       });
     }
-    if (improver.leaders.length) {
+    if (comeback) {
       cards.push({
-        title: '🚀 Biggest recent rise',
-        main: `${formatNames(improver.leaders.map((p) => p.playerName))} — +${improver.value}`,
-        sub: 'More sessions in the last 10 vs previous 10.',
+        title: '👀 Comeback Watch',
+        main: `${comeback.playerName} — ${comeback.totalAttended} total sessions`,
+        sub: `Proven presence; last seen ${formatDate(comeback.lastAttendanceDate)}.`,
       });
     }
 
@@ -343,17 +355,20 @@
     const mostRegular = topBy(players, (p) => p.totalAttended, { minValue: 1 });
     const mostConsistent = topBy(regulars, (p) => Number((p.attendanceRate * 100).toFixed(1)), { minValue: 1 });
     const ironStreak = topBy(players, (p) => p.longestStreak, { minValue: 1 });
-    const mostActiveRecent = topBy(players, (p) => p.last10, { minValue: 1 });
     const hotStreak = topBy(players, (p) => p.currentStreak, { minValue: 1 });
-    const improvedPool = hasHistory20 ? regulars.filter((p) => p.improveDelta > 0) : [];
+    const improvedPool = hasHistory20 ? players.filter((p) => p.improveDelta > 0) : [];
     const mostImproved = topBy(improvedPool, (p) => p.improveDelta, { minValue: 1 });
-
-    // Assumption: "new member" means first appearance is within the most recent 12 sessions.
-    const newMemberPool = players.filter((p) => {
-      const firstIdx = sessions.findIndex((s) => s.date === p.firstAttendanceDate);
-      return firstIdx >= 0 && firstIdx >= Math.max(0, sessions.length - 12);
-    });
-    const bestNewMember = topBy(newMemberPool, (p) => p.last10, { minValue: 1 });
+    const maxTotal = Math.max(1, ...players.map((p) => p.totalAttended));
+    // Assumption: reliable regular combines strong volume + consistency, min 12 sessions, avoid duplicating Most Regular if possible.
+    const reliablePool = players
+      .filter((p) => p.totalAttended >= 12)
+      .map((p) => ({
+        ...p,
+        reliableScore: 0.6 * p.attendanceRate + 0.4 * (p.totalAttended / maxTotal),
+      }))
+      .sort((a, b) => b.reliableScore - a.reliableScore);
+    const mostRegularName = mostRegular.leaders[0]?.playerName;
+    const reliableWinner = reliablePool.find((p) => p.playerName !== mostRegularName) || reliablePool[0];
 
     const awards = [
       {
@@ -375,30 +390,23 @@
         note: 'Longest all-time consecutive run.',
       },
       {
-        name: 'Most Active Recently',
-        winner: formatNames(mostActiveRecent.leaders.map((p) => p.playerName)),
-        stat: `${mostActiveRecent.value || 0} of last ${recentWindow}`,
-        note: 'Strong recent presence.',
-      },
-      {
         name: 'Current Hot Streak',
         winner: formatNames(hotStreak.leaders.map((p) => p.playerName)),
         stat: `${hotStreak.value || 0} straight`,
         note: 'Active streak through the latest session.',
       },
-      mostImproved.leaders.length
-        ? {
-          name: 'Most Improved Regular',
-          winner: formatNames(mostImproved.leaders.map((p) => p.playerName)),
-          stat: `+${mostImproved.value} vs previous 10`,
-          note: 'Bigger lift in the latest 10 sessions.',
-        }
-        : {
-          name: 'Rising Player',
-          winner: formatNames(bestNewMember.leaders.map((p) => p.playerName)),
-          stat: `${bestNewMember.value || 0} of last ${recentWindow}`,
-          note: 'Fast start from a newer group member.',
-        },
+      {
+        name: 'Most Improved',
+        winner: formatNames(mostImproved.leaders.map((p) => p.playerName)),
+        stat: `${mostImproved.value ? `+${mostImproved.value}` : '+0'} vs previous 10`,
+        note: 'Best jump from previous 10 to last 10.',
+      },
+      {
+        name: 'Reliable Regular',
+        winner: reliableWinner?.playerName || '—',
+        stat: reliableWinner ? `${pct(reliableWinner.attendanceRate)} rate • ${reliableWinner.totalAttended} sessions` : '—',
+        note: 'Trusted volume and consistency over time.',
+      },
     ];
 
     el.innerHTML = awards.map((a) => `
@@ -411,11 +419,38 @@
     `).join('');
   }
 
-  function renderCharts(players) {
+  function renderAllTimeGreats(players) {
+    const el = $('#allTimeGrid');
+    const streakLegend = topBy(players, (p) => p.longestStreak, { minValue: 1 });
+    const grinder = topBy(players, (p) => p.totalAttended, { minValue: 1 });
+    const core5 = [...players].sort((a, b) => b.totalAttended - a.totalAttended).slice(0, 5);
+
+    el.innerHTML = `
+      <article class="legacy-card">
+        <div class="legacy-title">Iron Legend</div>
+        <div class="legacy-name">${formatNames(streakLegend.leaders.map((p) => p.playerName))}</div>
+        <div class="legacy-sub">${streakLegend.value || 0} straight — longest run in group history.</div>
+      </article>
+      <article class="legacy-card">
+        <div class="legacy-title">The Grinder</div>
+        <div class="legacy-name">${formatNames(grinder.leaders.map((p) => p.playerName))}</div>
+        <div class="legacy-sub">${grinder.value || 0} total sessions — always in the mix.</div>
+      </article>
+      <article class="core-card">
+        <div class="legacy-title">Active Core 5</div>
+        <div class="legacy-name">The backbone of the group</div>
+        <ol class="core-list">
+          ${core5.map((p, i) => `<li><span>${i + 1}. ${p.playerName}</span><strong>${p.totalAttended}</strong></li>`).join('')}
+        </ol>
+      </article>
+    `;
+  }
+
+  function renderCharts(players, sessions) {
     destroyCharts();
 
-    Chart.defaults.color = '#a3a3a3';
-    Chart.defaults.borderColor = '#262626';
+    Chart.defaults.color = '#9ca3af';
+    Chart.defaults.borderColor = '#334155';
 
     const leaders = [...players].sort((a, b) => b.totalAttended - a.totalAttended).slice(0, 12);
     const fairness = [...players]
@@ -423,10 +458,16 @@
       .sort((a, b) => b.attendanceRate - a.attendanceRate)
       .slice(0, 12);
     const form = [...players].sort((a, b) => b.last10 - a.last10 || b.totalAttended - a.totalAttended).slice(0, 12);
+    const dowCounts = new Map([['Sun', 0], ['Mon', 0], ['Tue', 0], ['Wed', 0], ['Thu', 0], ['Fri', 0], ['Sat', 0]]);
+    sessions.forEach((s) => {
+      const key = new Date(s.date).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+      dowCounts.set(key, (dowCounts.get(key) || 0) + 1);
+    });
 
     const leadersCtx = document.getElementById('leadersChart').getContext('2d');
     const rateCtx = document.getElementById('rateChart').getContext('2d');
     const formCtx = document.getElementById('formChart').getContext('2d');
+    const dowCtx = document.getElementById('dowChart').getContext('2d');
 
     state.charts.leaders = new Chart(leadersCtx, {
       type: 'bar',
@@ -436,7 +477,7 @@
           label: 'Sessions Attended',
           data: leaders.map((x) => x.totalAttended),
           backgroundColor: gradient(leadersCtx),
-          borderColor: '#22c55e',
+          borderColor: '#34c77b',
           borderWidth: 1,
         }],
       },
@@ -456,7 +497,7 @@
           label: 'Attendance Rate %',
           data: fairness.map((x) => +(x.attendanceRate * 100).toFixed(1)),
           backgroundColor: gradient(rateCtx),
-          borderColor: '#22c55e',
+          borderColor: '#34c77b',
           borderWidth: 1,
         }],
       },
@@ -475,16 +516,33 @@
         datasets: [{
           label: 'Last 10 Sessions',
           data: form.map((x) => x.last10),
-          backgroundColor: gradient(formCtx),
-          borderColor: '#22c55e',
+          backgroundColor: '#60a5fa99',
+          borderColor: '#60a5fa',
           borderWidth: 1,
         }],
       },
       options: {
-        indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
         scales: { x: { beginAtZero: true, max: 10, ticks: { precision: 0 } } },
+      },
+    });
+
+    state.charts.dow = new Chart(dowCtx, {
+      type: 'doughnut',
+      data: {
+        labels: [...dowCounts.keys()],
+        datasets: [{
+          data: [...dowCounts.values()],
+          backgroundColor: ['#60a5fa', '#34c77b', '#f6c453', '#fb923c', '#818cf8', '#22d3ee', '#f472b6'],
+          borderColor: '#1b2433',
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
       },
     });
   }
@@ -542,7 +600,8 @@
     renderKpis(state.sessions, state.players, state.syncLabel);
     renderHighlights(state.players, state.sessions);
     renderAwards(state.players, state.sessions);
-    renderCharts(state.players);
+    renderAllTimeGreats(state.players);
+    renderCharts(state.players, state.sessions);
     renderTable(state.players);
   }
 
@@ -575,6 +634,7 @@
       $('#playerTableBody').innerHTML = '';
       $('#highlightsGrid').innerHTML = '';
       $('#awardsGrid').innerHTML = '';
+      $('#allTimeGrid').innerHTML = '';
       ['#kpiSessions', '#kpiPlayers', '#kpiAvg'].forEach((sel) => { $(sel).textContent = '—'; });
       $('#kpiSync').textContent = state.syncLabel || '—';
     } finally {
