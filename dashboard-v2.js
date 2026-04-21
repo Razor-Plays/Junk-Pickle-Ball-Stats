@@ -97,22 +97,6 @@
     return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
   }
 
-  function formatNames(names) {
-    if (!names.length) return '—';
-    if (names.length === 1) return names[0];
-    if (names.length === 2) return `${names[0]} & ${names[1]}`;
-    return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
-  }
-
-  function topBy(players, getValue, { minValue = -Infinity, maxLeaders = 2 } = {}) {
-    if (!players.length) return { leaders: [], value: null };
-    const ranked = [...players].sort((a, b) => getValue(b) - getValue(a));
-    const best = getValue(ranked[0]);
-    if (best == null || best < minValue) return { leaders: [], value: null };
-    const leaders = ranked.filter((p) => getValue(p) === best).slice(0, maxLeaders);
-    return { leaders, value: best };
-  }
-
   function gradient(ctx) {
     const g = ctx.createLinearGradient(0, 0, 0, 280);
     g.addColorStop(0, 'rgba(34,197,94,0.95)');
@@ -226,13 +210,6 @@
         if (attendedSet.has(i)) last10 += 1;
       }
 
-      const prevStart = Math.max(0, totalSessions - 20);
-      const prevEnd = Math.max(0, totalSessions - 10);
-      let prev10 = 0;
-      for (let i = prevStart; i < prevEnd; i += 1) {
-        if (attendedSet.has(i)) prev10 += 1;
-      }
-
       players.push({
         playerName: name,
         totalAttended,
@@ -242,8 +219,6 @@
         currentStreak,
         longestStreak,
         last10,
-        prev10,
-        improveDelta: last10 - prev10,
       });
     }
 
@@ -282,132 +257,6 @@
     const avg = sessions.length ? (players.reduce((acc, p) => acc + p.totalAttended, 0) / sessions.length) : 0;
     $('#kpiAvg').textContent = avg.toFixed(1);
     $('#kpiSync').textContent = syncLabel || '—';
-  }
-
-  function renderHighlights(players, sessions) {
-    const el = $('#highlightsGrid');
-    const recentWindow = Math.min(10, sessions.length);
-    const regulars = players.filter((p) => p.totalAttended >= 8);
-
-    const streak = topBy(players, (p) => p.currentStreak, { minValue: 1 });
-    const recent = topBy(players, (p) => p.last10, { minValue: 1 });
-    const rate = topBy(regulars, (p) => Number((p.attendanceRate * 100).toFixed(1)), { minValue: 1 });
-    const improver = topBy(players.filter((p) => p.improveDelta > 0), (p) => p.improveDelta, { minValue: 1 });
-
-    const cards = [];
-    if (streak.leaders.length) {
-      cards.push({
-        title: '🔥 Hot streak',
-        main: `${formatNames(streak.leaders.map((p) => p.playerName))} — ${streak.value} straight`,
-        sub: 'Momentum is live heading into the next run.',
-      });
-    }
-    if (recent.leaders.length) {
-      cards.push({
-        title: '🎯 Most active lately',
-        main: `${formatNames(recent.leaders.map((p) => p.playerName))} — ${recent.value}/${recentWindow}`,
-        sub: 'Showing up strong in the latest sessions.',
-      });
-    }
-    if (rate.leaders.length) {
-      cards.push({
-        title: '📈 Best regular rate',
-        main: `${formatNames(rate.leaders.map((p) => p.playerName))} — ${rate.value.toFixed(1)}%`,
-        sub: 'Best attendance rate among regulars.',
-      });
-    }
-    if (improver.leaders.length) {
-      cards.push({
-        title: '🚀 Biggest recent rise',
-        main: `${formatNames(improver.leaders.map((p) => p.playerName))} — +${improver.value}`,
-        sub: 'More sessions in the last 10 vs previous 10.',
-      });
-    }
-
-    el.innerHTML = cards.slice(0, 4).map((c) => `
-      <article class="story-card">
-        <div class="story-title">${c.title}</div>
-        <div class="story-main">${c.main}</div>
-        <div class="story-sub">${c.sub}</div>
-      </article>
-    `).join('');
-  }
-
-  function renderAwards(players, sessions) {
-    const el = $('#awardsGrid');
-    const recentWindow = Math.min(10, sessions.length);
-    const hasHistory20 = sessions.length >= 20;
-    const regulars = players.filter((p) => p.totalAttended >= 8);
-
-    const mostRegular = topBy(players, (p) => p.totalAttended, { minValue: 1 });
-    const mostConsistent = topBy(regulars, (p) => Number((p.attendanceRate * 100).toFixed(1)), { minValue: 1 });
-    const ironStreak = topBy(players, (p) => p.longestStreak, { minValue: 1 });
-    const mostActiveRecent = topBy(players, (p) => p.last10, { minValue: 1 });
-    const hotStreak = topBy(players, (p) => p.currentStreak, { minValue: 1 });
-    const improvedPool = hasHistory20 ? regulars.filter((p) => p.improveDelta > 0) : [];
-    const mostImproved = topBy(improvedPool, (p) => p.improveDelta, { minValue: 1 });
-
-    // Assumption: "new member" means first appearance is within the most recent 12 sessions.
-    const newMemberPool = players.filter((p) => {
-      const firstIdx = sessions.findIndex((s) => s.date === p.firstAttendanceDate);
-      return firstIdx >= 0 && firstIdx >= Math.max(0, sessions.length - 12);
-    });
-    const bestNewMember = topBy(newMemberPool, (p) => p.last10, { minValue: 1 });
-
-    const awards = [
-      {
-        name: 'Most Regular Player',
-        winner: formatNames(mostRegular.leaders.map((p) => p.playerName)),
-        stat: `${mostRegular.value || 0} sessions`,
-        note: 'Still setting the pace.',
-      },
-      {
-        name: 'Most Consistent Presence',
-        winner: formatNames(mostConsistent.leaders.map((p) => p.playerName)),
-        stat: `${mostConsistent.value ? mostConsistent.value.toFixed(1) : '0.0'}% rate`,
-        note: 'Best rate among regulars (8+ sessions).',
-      },
-      {
-        name: 'Iron Streak',
-        winner: formatNames(ironStreak.leaders.map((p) => p.playerName)),
-        stat: `${ironStreak.value || 0} in a row`,
-        note: 'Longest all-time consecutive run.',
-      },
-      {
-        name: 'Most Active Recently',
-        winner: formatNames(mostActiveRecent.leaders.map((p) => p.playerName)),
-        stat: `${mostActiveRecent.value || 0} of last ${recentWindow}`,
-        note: 'Strong recent presence.',
-      },
-      {
-        name: 'Current Hot Streak',
-        winner: formatNames(hotStreak.leaders.map((p) => p.playerName)),
-        stat: `${hotStreak.value || 0} straight`,
-        note: 'Active streak through the latest session.',
-      },
-      mostImproved.leaders.length
-        ? {
-          name: 'Most Improved Regular',
-          winner: formatNames(mostImproved.leaders.map((p) => p.playerName)),
-          stat: `+${mostImproved.value} vs previous 10`,
-          note: 'Bigger lift in the latest 10 sessions.',
-        }
-        : {
-          name: 'Rising Player',
-          winner: formatNames(bestNewMember.leaders.map((p) => p.playerName)),
-          stat: `${bestNewMember.value || 0} of last ${recentWindow}`,
-          note: 'Fast start from a newer group member.',
-        },
-    ];
-
-    el.innerHTML = awards.map((a) => `
-      <article class="award-card">
-        <div class="award-name">${a.name}</div>
-        <div class="award-winner">${a.winner}</div>
-        <div class="award-stat">${a.stat}</div>
-        <div class="award-note">${a.note}</div>
-      </article>
-    `).join('');
   }
 
   function renderCharts(players) {
@@ -539,8 +388,6 @@
     state.players = buildPlayerStats(state.sessions);
 
     renderKpis(state.sessions, state.players, state.syncLabel);
-    renderHighlights(state.players, state.sessions);
-    renderAwards(state.players, state.sessions);
     renderCharts(state.players);
     renderTable(state.players);
   }
@@ -572,8 +419,6 @@
       setDataSourceStatus('error');
       destroyCharts();
       $('#playerTableBody').innerHTML = '';
-      $('#highlightsGrid').innerHTML = '';
-      $('#awardsGrid').innerHTML = '';
       ['#kpiSessions', '#kpiPlayers', '#kpiAvg'].forEach((sel) => { $(sel).textContent = '—'; });
       $('#kpiSync').textContent = state.syncLabel || '—';
     } finally {

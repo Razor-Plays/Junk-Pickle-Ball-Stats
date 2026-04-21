@@ -42,29 +42,6 @@
     .card{background:var(--card);padding:14px;border:1px solid var(--line);border-radius:16px}
     .kpi-title{font-size:12px;color:var(--muted)}
     .kpi-value{font-size:24px;font-weight:800}
-    .top-section{margin:16px 0}
-    .top-section h2{margin:0 0 10px;font-size:16px}
-    .top-grid{display:grid;grid-template-columns:1fr;gap:10px}
-    .story-card{
-      background:linear-gradient(180deg, rgba(22,163,74,.15), rgba(18,20,23,.9));
-      border:1px solid rgba(22,163,74,.35);
-      border-radius:14px;
-      padding:12px;
-    }
-    .story-title{font-size:12px;color:#bbf7d0;margin-bottom:4px}
-    .story-main{font-size:18px;font-weight:800;color:#f0fdf4}
-    .story-sub{font-size:12px;color:var(--muted)}
-    .award-grid{display:grid;grid-template-columns:1fr;gap:10px}
-    .award-card{
-      background:linear-gradient(180deg, rgba(15,23,42,.95), rgba(18,20,23,.95));
-      border:1px solid rgba(148,163,184,.35);
-      border-radius:14px;
-      padding:12px;
-    }
-    .award-name{font-size:13px;color:#cbd5e1;font-weight:700}
-    .award-winner{font-size:18px;font-weight:800;margin:4px 0}
-    .award-stat{font-size:12px;color:#bbf7d0}
-    .award-note{font-size:12px;color:var(--muted)}
 
     .grid{display:grid;grid-template-columns:1fr;gap:14px}
     .chart-card,.table-card{background:var(--card);padding:14px;border:1px solid var(--line);border-radius:16px}
@@ -82,8 +59,6 @@
       .cards{grid-template-columns:repeat(4,minmax(0,1fr))}
       .grid{grid-template-columns:1fr 1fr}
       .table-card{grid-column:1 / -1}
-      .top-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-      .award-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
     }
   </style>
 </head>
@@ -110,16 +85,6 @@
 
     <div id="loadingState" class="state">Loading live attendance data…</div>
     <div id="errorState" class="state error"></div>
-
-    <section class="top-section">
-      <h2>Highlights</h2>
-      <div id="highlightsGrid" class="top-grid"></div>
-    </section>
-
-    <section class="top-section">
-      <h2>Awards</h2>
-      <div id="awardsGrid" class="award-grid"></div>
-    </section>
 
     <section class="cards">
       <div class="card"><div class="kpi-title">Total Sessions</div><div id="kpiSessions" class="kpi-value">—</div></div>
