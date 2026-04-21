@@ -1,6 +1,8 @@
 (() => {
   const SHEET_ID = '1pe2SvzjhPTlWaRfMWkuXmErbjPWHGIEraELYhZxgAHA';
   const CSV_URL = (sheetName) => `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+  const SNAPSHOT_ATTENDANCE_URL = './data/attendance_export_snapshot.csv';
+  const SNAPSHOT_META_URL = './data/source_meta_snapshot.csv';
 
   const GUEST_REGEX = /^guest\s+\d+$/i;
   const PLACEHOLDER_NAMES = new Set(['', '-', 'na', 'n/a', 'null', 'none', 'unknown', 'tbd']);
@@ -10,6 +12,7 @@
     sessions: [],
     players: [],
     syncLabel: '—',
+    dataSource: 'loading',
     charts: {},
   };
 
@@ -23,6 +26,28 @@
     const el = $('#errorState');
     el.textContent = message;
     el.classList.toggle('show', Boolean(message));
+  }
+
+  function setDataSourceStatus(mode, detail = '') {
+    state.dataSource = mode;
+    const el = $('#dataSourceStatus');
+    el.classList.remove('live', 'snapshot', 'error');
+    if (mode === 'loading') {
+      el.textContent = 'Data source: loading…';
+      return;
+    }
+    if (mode === 'live') {
+      el.classList.add('live');
+      el.textContent = 'Data source: Live Google Sheet';
+      return;
+    }
+    if (mode === 'snapshot') {
+      el.classList.add('snapshot');
+      el.textContent = detail ? `Data source: Local snapshot fallback (${detail})` : 'Data source: Local snapshot fallback';
+      return;
+    }
+    el.classList.add('error');
+    el.textContent = 'Data source: Error loading data';
   }
 
   function parseCsv(url) {
@@ -331,15 +356,24 @@
   }
 
   async function loadSheetsData() {
-    const [attendanceRows, metaRows] = await Promise.all([
-      parseCsv(CSV_URL('attendance_export')),
-      parseCsv(CSV_URL('source_meta')).catch(() => []),
-    ]);
-
-    return {
-      attendanceRows,
-      metaRows,
-    };
+    try {
+      const [attendanceRows, metaRows] = await Promise.all([
+        parseCsv(CSV_URL('attendance_export')),
+        parseCsv(CSV_URL('source_meta')).catch(() => []),
+      ]);
+      return { attendanceRows, metaRows, sourceMode: 'live' };
+    } catch (liveErr) {
+      const [attendanceRows, metaRows] = await Promise.all([
+        parseCsv(SNAPSHOT_ATTENDANCE_URL),
+        parseCsv(SNAPSHOT_META_URL).catch(() => []),
+      ]);
+      return {
+        attendanceRows,
+        metaRows,
+        sourceMode: 'snapshot',
+        sourceDetail: liveErr?.message ? `live failed: ${liveErr.message}` : 'live fetch failed',
+      };
+    }
   }
 
   function getDateFilters() {
@@ -361,11 +395,13 @@
   async function refresh() {
     showError('');
     showLoading(true);
+    setDataSourceStatus('loading');
 
     try {
-      const { attendanceRows, metaRows } = await loadSheetsData();
+      const { attendanceRows, metaRows, sourceMode, sourceDetail } = await loadSheetsData();
       state.rawRows = inferRows(attendanceRows);
       state.syncLabel = readLastSyncLabel(metaRows);
+      setDataSourceStatus(sourceMode, sourceDetail);
 
       if (!state.rawRows.length) {
         throw new Error('No usable rows found in attendance_export. Verify public sheet + expected columns (session_date/player_name).');
@@ -379,7 +415,8 @@
 
       applyAndRender();
     } catch (err) {
-      showError(`Unable to load live sheet data: ${err.message || err}`);
+      showError(`Unable to load dashboard data: ${err.message || err}`);
+      setDataSourceStatus('error');
       destroyCharts();
       $('#playerTableBody').innerHTML = '';
       ['#kpiSessions', '#kpiPlayers', '#kpiAvg'].forEach((sel) => { $(sel).textContent = '—'; });

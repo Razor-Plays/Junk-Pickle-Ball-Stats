@@ -29,6 +29,10 @@
     input[type="date"],button{height:38px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#0f1113;color:var(--ink)}
     button{cursor:pointer}
     button.primary{border-color:var(--accent);color:var(--accent);font-weight:700}
+    .source-status{padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-size:12px;background:#0f1113;color:var(--muted)}
+    .source-status.live{border-color:rgba(22,163,74,.6);color:#86efac}
+    .source-status.snapshot{border-color:rgba(245,158,11,.6);color:#fcd34d}
+    .source-status.error{border-color:rgba(239,68,68,.6);color:#fecaca}
 
     .state{display:none;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#0f1113;margin-bottom:12px}
     .state.show{display:block}
@@ -76,6 +80,7 @@
       </div>
       <button id="refreshBtn" class="primary">Refresh</button>
       <span class="chip">Guests excluded: <code>^Guest\s+\d+$</code></span>
+      <span id="dataSourceStatus" class="source-status">Data source: loading…</span>
     </div>
 
     <div id="loadingState" class="state">Loading live attendance data…</div>

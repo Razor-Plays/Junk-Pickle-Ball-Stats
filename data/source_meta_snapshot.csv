@@ -1,0 +1,4 @@
+key,value
+source,attendance_export_snapshot.csv
+last_sync_date,2025-08-28
+note,Local development fallback snapshot
