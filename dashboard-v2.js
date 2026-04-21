@@ -99,6 +99,7 @@
   }
 
   const pct = (n) => `${(n * 100).toFixed(1)}%`;
+  const daysBetween = (a, b) => Math.max(0, Math.round((new Date(a) - new Date(b)) / 86400000));
 
   function formatNames(names) {
     if (!names.length) return '—';
@@ -290,12 +291,19 @@
   function renderHighlights(players, sessions) {
     const el = $('#highlightsGrid');
     const recentWindow = Math.min(10, sessions.length);
-    const regulars = players.filter((p) => p.totalAttended >= 8);
     const latestIndex = sessions.length - 1;
+    const latestDate = sessions[latestIndex]?.date;
 
     const streak = topBy(players, (p) => p.currentStreak, { minValue: 1 });
     const recent = topBy(players, (p) => p.last10, { minValue: 1 });
-    const rate = topBy(regulars, (p) => Number((p.attendanceRate * 100).toFixed(1)), { minValue: 1 });
+    // Assumption: new member = first appearance within last 12 sessions.
+    const newMemberPool = players
+      .map((p) => ({
+        ...p,
+        firstIdx: sessions.findIndex((s) => s.date === p.firstAttendanceDate),
+      }))
+      .filter((p) => p.firstIdx >= Math.max(0, sessions.length - 12));
+    const bestNewMember = topBy(newMemberPool, (p) => p.last10, { minValue: 1 });
 
     // Assumption: comeback watch = meaningful prior contributor (8+ sessions) absent for last 6 sessions.
     const comebackPool = players
@@ -322,18 +330,19 @@
         sub: 'Setting the pace in recent sessions.',
       });
     }
-    if (rate.leaders.length) {
+    if (bestNewMember.leaders.length) {
       cards.push({
-        title: '📈 Best Attendance Rate',
-        main: `${formatNames(rate.leaders.map((p) => p.playerName))} — ${rate.value.toFixed(1)}%`,
-        sub: 'Best rate among established regulars.',
+        title: '🌱 Best New Member',
+        main: `${formatNames(bestNewMember.leaders.map((p) => p.playerName))} — ${bestNewMember.value}/${recentWindow}`,
+        sub: 'Strong early momentum since joining.',
       });
     }
     if (comeback) {
+      const missingWeeks = latestDate ? Math.max(1, Math.round(daysBetween(latestDate, comeback.lastAttendanceDate) / 7)) : 0;
       cards.push({
         title: '👀 Comeback Watch',
-        main: `${comeback.playerName} — ${comeback.totalAttended} total sessions`,
-        sub: `Proven presence; last seen ${formatDate(comeback.lastAttendanceDate)}.`,
+        main: `${comeback.playerName} — Missing for ${missingWeeks} week${missingWeeks === 1 ? '' : 's'}`,
+        sub: `Last seen ${formatDate(comeback.lastAttendanceDate)}. Ready for a return.`,
       });
     }
 
@@ -350,25 +359,39 @@
     const el = $('#awardsGrid');
     const recentWindow = Math.min(10, sessions.length);
     const hasHistory20 = sessions.length >= 20;
-    const regulars = players.filter((p) => p.totalAttended >= 8);
-
     const mostRegular = topBy(players, (p) => p.totalAttended, { minValue: 1 });
-    const mostConsistent = topBy(regulars, (p) => Number((p.attendanceRate * 100).toFixed(1)), { minValue: 1 });
     const ironStreak = topBy(players, (p) => p.longestStreak, { minValue: 1 });
     const hotStreak = topBy(players, (p) => p.currentStreak, { minValue: 1 });
     const improvedPool = hasHistory20 ? players.filter((p) => p.improveDelta > 0) : [];
     const mostImproved = topBy(improvedPool, (p) => p.improveDelta, { minValue: 1 });
+
+    // Assumption: Fast Starter = best attendance in first 5 sessions after joining.
+    const fastStarterPool = players.map((p) => {
+      const firstIdx = sessions.findIndex((s) => s.date === p.firstAttendanceDate);
+      const windowStart = Math.max(0, firstIdx);
+      const windowEnd = Math.min(sessions.length, windowStart + 5);
+      const eligible = Math.max(1, windowEnd - windowStart);
+      let attended = 0;
+      for (let i = windowStart; i < windowEnd; i += 1) {
+        if (sessions[i]?.players?.includes(p.playerName)) attended += 1;
+      }
+      return { ...p, fastStarterScore: attended / eligible, fastStarterCount: attended };
+    }).filter((p) => p.fastStarterCount >= 3);
+    const fastStarter = topBy(fastStarterPool, (p) => p.fastStarterScore, { minValue: 0.2 });
+
     const maxTotal = Math.max(1, ...players.map((p) => p.totalAttended));
-    // Assumption: reliable regular combines strong volume + consistency, min 12 sessions, avoid duplicating Most Regular if possible.
-    const reliablePool = players
-      .filter((p) => p.totalAttended >= 12)
+    const mostRegularName = mostRegular.leaders[0]?.playerName;
+    const ironName = ironStreak.leaders[0]?.playerName;
+    const hotName = hotStreak.leaders[0]?.playerName;
+    // Assumption: Quiet Contributor favors balanced strength (rate + volume + recent form) while avoiding headline winners if possible.
+    const quietPool = players
+      .filter((p) => p.totalAttended >= 10 && p.attendanceRate >= 0.45 && p.last10 >= 3)
       .map((p) => ({
         ...p,
-        reliableScore: 0.6 * p.attendanceRate + 0.4 * (p.totalAttended / maxTotal),
+        quietScore: 0.45 * p.attendanceRate + 0.35 * (p.totalAttended / maxTotal) + 0.2 * (p.last10 / 10),
       }))
-      .sort((a, b) => b.reliableScore - a.reliableScore);
-    const mostRegularName = mostRegular.leaders[0]?.playerName;
-    const reliableWinner = reliablePool.find((p) => p.playerName !== mostRegularName) || reliablePool[0];
+      .sort((a, b) => b.quietScore - a.quietScore);
+    const quietWinner = quietPool.find((p) => ![mostRegularName, ironName, hotName].includes(p.playerName)) || quietPool[0];
 
     const awards = [
       {
@@ -378,22 +401,10 @@
         note: 'Still setting the pace.',
       },
       {
-        name: 'Most Consistent Presence',
-        winner: formatNames(mostConsistent.leaders.map((p) => p.playerName)),
-        stat: `${mostConsistent.value ? mostConsistent.value.toFixed(1) : '0.0'}% rate`,
-        note: 'Best rate among regulars (8+ sessions).',
-      },
-      {
-        name: 'Iron Streak',
+        name: 'The Iron Paddle',
         winner: formatNames(ironStreak.leaders.map((p) => p.playerName)),
         stat: `${ironStreak.value || 0} in a row`,
         note: 'Longest all-time consecutive run.',
-      },
-      {
-        name: 'Current Hot Streak',
-        winner: formatNames(hotStreak.leaders.map((p) => p.playerName)),
-        stat: `${hotStreak.value || 0} straight`,
-        note: 'Active streak through the latest session.',
       },
       {
         name: 'Most Improved',
@@ -402,10 +413,22 @@
         note: 'Best jump from previous 10 to last 10.',
       },
       {
-        name: 'Reliable Regular',
-        winner: reliableWinner?.playerName || '—',
-        stat: reliableWinner ? `${pct(reliableWinner.attendanceRate)} rate • ${reliableWinner.totalAttended} sessions` : '—',
-        note: 'Trusted volume and consistency over time.',
+        name: 'Fast Starter',
+        winner: formatNames(fastStarter.leaders.map((p) => p.playerName)),
+        stat: fastStarter.leaders.length ? `${pct(fastStarter.value)} in first 5` : '—',
+        note: 'Best first five sessions after joining.',
+      },
+      {
+        name: 'Quiet Contributor',
+        winner: quietWinner?.playerName || '—',
+        stat: quietWinner ? `${pct(quietWinner.attendanceRate)} rate • ${quietWinner.last10}/10 recent` : '—',
+        note: 'Consistent impact without the spotlight.',
+      },
+      {
+        name: 'Current Hot Streak',
+        winner: formatNames(hotStreak.leaders.map((p) => p.playerName)),
+        stat: `${hotStreak.value || 0} straight`,
+        note: 'Active streak through the latest session.',
       },
     ];
 
@@ -426,21 +449,26 @@
     const core5 = [...players].sort((a, b) => b.totalAttended - a.totalAttended).slice(0, 5);
 
     el.innerHTML = `
-      <article class="legacy-card">
-        <div class="legacy-title">Iron Legend</div>
+      <article class="legacy-card iron">
+        <div class="legacy-label">🔥 The Iron Paddle</div>
         <div class="legacy-name">${formatNames(streakLegend.leaders.map((p) => p.playerName))}</div>
-        <div class="legacy-sub">${streakLegend.value || 0} straight — longest run in group history.</div>
+        <div class="legacy-stat">${streakLegend.value || 0} straight</div>
+        <div class="legacy-sub">Longest run in group history.</div>
       </article>
-      <article class="legacy-card">
-        <div class="legacy-title">The Grinder</div>
+      <article class="legacy-card grinder">
+        <div class="legacy-label">💪 The Grinder</div>
         <div class="legacy-name">${formatNames(grinder.leaders.map((p) => p.playerName))}</div>
-        <div class="legacy-sub">${grinder.value || 0} total sessions — always in the mix.</div>
+        <div class="legacy-stat">${grinder.value || 0} sessions</div>
+        <div class="legacy-sub">Always in the mix.</div>
       </article>
       <article class="core-card">
-        <div class="legacy-title">Active Core 5</div>
+        <div class="legacy-label">🏅 Active Core 5</div>
         <div class="legacy-name">The backbone of the group</div>
         <ol class="core-list">
-          ${core5.map((p, i) => `<li><span>${i + 1}. ${p.playerName}</span><strong>${p.totalAttended}</strong></li>`).join('')}
+          ${core5.map((p, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '•';
+      return `<li><span>${medal} ${p.playerName}</span><strong>${p.totalAttended}</strong></li>`;
+    }).join('')}
         </ol>
       </article>
     `;

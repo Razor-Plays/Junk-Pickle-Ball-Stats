@@ -75,9 +75,12 @@
 
     .legacy-grid{display:grid;grid-template-columns:1fr;gap:10px}
     .legacy-card,.core-card{background:linear-gradient(180deg, rgba(148,163,184,.1), rgba(27,36,51,.96));border:1px solid rgba(148,163,184,.38);border-radius:16px;padding:14px;box-shadow:var(--shadow)}
-    .legacy-title{font-size:12px;color:#cbd5e1}
-    .legacy-name{font-size:20px;font-weight:800}
-    .legacy-sub{font-size:12px;color:var(--muted)}
+    .legacy-card.iron{border-color:rgba(251,146,60,.45);background:linear-gradient(180deg, rgba(251,146,60,.16), rgba(27,36,51,.96))}
+    .legacy-card.grinder{border-color:rgba(96,165,250,.45);background:linear-gradient(180deg, rgba(96,165,250,.14), rgba(27,36,51,.96))}
+    .legacy-label{font-size:11px;color:#cbd5e1;letter-spacing:.6px;font-weight:700;text-transform:uppercase}
+    .legacy-name{font-size:26px;font-weight:800;line-height:1.2;margin:4px 0}
+    .legacy-stat{font-size:24px;font-weight:800;color:#fff}
+    .legacy-sub{font-size:12px;color:var(--muted);margin-top:4px}
     .core-card{border-color:rgba(246,196,83,.44);background:linear-gradient(180deg, rgba(246,196,83,.18), rgba(27,36,51,.96))}
     .core-list{margin:8px 0 0;padding:0;list-style:none}
     .core-list li{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed rgba(148,163,184,.25);font-size:14px}
@@ -122,7 +125,6 @@
         <input id="toDate" type="date" />
       </div>
       <button id="refreshBtn" class="primary">Refresh</button>
-      <span class="chip">Guests excluded: <code>^Guest\s+\d+$</code></span>
       <span id="dataSourceStatus" class="source-status">Data source: loading…</span>
     </div>
 
@@ -158,7 +160,7 @@
       </div>
 
       <div class="chart-card">
-        <h3>📊 Attendance Rate (Since Joining)</h3>
+        <h3>📊 Attendance Rate Since Joining</h3>
         <div class="chartbox"><canvas id="rateChart"></canvas></div>
       </div>
 
