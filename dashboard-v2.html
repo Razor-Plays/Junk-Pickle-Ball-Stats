@@ -22,13 +22,13 @@
       --shadow:0 10px 28px rgba(2,6,23,.32);
     }
     *{box-sizing:border-box}
-    body{margin:0;background:radial-gradient(1000px 600px at 80% -10%, #1e293b 0%, var(--bg) 60%);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
+    body{margin:0;background:radial-gradient(1000px 600px at 80% -10%, #1e293b 0%, var(--bg) 60%);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial;overflow-x:hidden}
     header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);background:rgba(15,23,42,.9);backdrop-filter:blur(4px);position:sticky;top:0;z-index:10}
     h1{font-size:20px;margin:0;font-weight:800}
     .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:#162031;font-size:12px;color:var(--muted)}
-    main{max-width:1120px;margin:20px auto;padding:0 16px}
+    main{max-width:1120px;margin:16px auto;padding:0 14px}
 
-    .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:16px}
+    .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:14px}
     .field{display:flex;flex-direction:column;gap:6px}
     label{font-size:12px;color:var(--muted)}
     input[type="date"],button{height:38px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#142033;color:var(--ink)}
@@ -89,15 +89,37 @@
     .grid{display:grid;grid-template-columns:1fr;gap:14px}
     .chart-card,.table-card{background:var(--panel);padding:14px;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
     .chart-card h3,.table-card h3{margin:0 0 10px;font-size:14px;color:var(--muted)}
-    .chartbox{position:relative;width:100%;height:320px}
+    .chartbox{position:relative;width:100%;height:220px;min-height:180px}
 
     .table-wrap{overflow:auto;max-height:520px}
-    table{width:100%;border-collapse:collapse;min-width:760px}
+    table{width:100%;border-collapse:collapse;min-width:640px}
     th,td{padding:10px;border-bottom:1px solid var(--line);font-size:14px;text-align:left}
     th{position:sticky;top:0;background:#142036;color:var(--muted);font-weight:600}
 
     .footer{margin:18px 0;color:var(--muted);font-size:12px;text-align:center}
 
+    @media(min-width:640px){
+      .chartbox{height:260px}
+      main{padding:0 16px}
+    }
+    @media(max-width:639px){
+      header{padding:14px 14px}
+      h1{font-size:18px}
+      .toolbar{gap:8px}
+      .field{flex:1 1 140px}
+      input[type="date"],button{height:36px}
+      .card{padding:12px}
+      .kpi-value{font-size:21px}
+      .top-section{margin:14px 0}
+      .top-section h2{font-size:15px}
+      .story-main,.award-winner{font-size:16px}
+      .legacy-name{font-size:22px}
+      .legacy-stat{font-size:21px}
+      .chartbox{height:210px}
+      .chart-card,.table-card{padding:12px}
+      th,td{padding:8px;font-size:13px}
+      .footer{font-size:11px}
+    }
     @media(min-width:800px){
       .cards{grid-template-columns:repeat(4,minmax(0,1fr))}
       .grid{grid-template-columns:1fr 1fr}
@@ -105,6 +127,7 @@
       .top-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       .award-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
       .legacy-grid{grid-template-columns:1fr 1fr 1.2fr}
+      .chartbox{height:300px}
     }
   </style>
 </head>

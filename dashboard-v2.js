@@ -14,6 +14,7 @@
     players: [],
     syncLabel: '—',
     dataSource: 'loading',
+    highlightFallback: null,
     charts: {},
   };
 
@@ -315,38 +316,36 @@
       .sort((a, b) => b.totalAttended - a.totalAttended || b.longestStreak - a.longestStreak);
     const comeback = comebackPool[0];
 
-    const cards = [];
-    if (streak.leaders.length) {
-      cards.push({
-        title: '🔥 Hot Streak',
-        main: `${formatNames(streak.leaders.map((p) => p.playerName))} — ${streak.value} straight`,
-        sub: 'Carrying the best active run right now.',
-      });
-    }
-    if (recent.leaders.length) {
-      cards.push({
-        title: '🎯 Most Active (Last 10)',
-        main: `${formatNames(recent.leaders.map((p) => p.playerName))} — ${recent.value}/${recentWindow}`,
-        sub: 'Setting the pace in recent sessions.',
-      });
-    }
-    if (bestNewMember.leaders.length) {
-      cards.push({
-        title: '🌱 Best New Member',
-        main: `${formatNames(bestNewMember.leaders.map((p) => p.playerName))} — ${bestNewMember.value}/${recentWindow}`,
-        sub: 'Strong early momentum since joining.',
-      });
-    }
-    if (comeback) {
-      const missingWeeks = latestDate ? Math.max(1, Math.round(daysBetween(latestDate, comeback.lastAttendanceDate) / 7)) : 0;
-      cards.push({
-        title: '👀 Comeback Watch',
-        main: `${comeback.playerName} — Missing for ${missingWeeks} week${missingWeeks === 1 ? '' : 's'}`,
-        sub: `Last seen ${formatDate(comeback.lastAttendanceDate)}. Ready for a return.`,
-      });
-    }
+    const fallback = state.highlightFallback || {};
 
-    el.innerHTML = cards.slice(0, 4).map((c) => `
+    const hot = streak.leaders.length
+      ? { main: `${formatNames(streak.leaders.map((p) => p.playerName))} — ${streak.value} straight`, sub: 'Carrying the best active run right now.' }
+      : (fallback.hot || { main: 'No current candidate', sub: 'Waiting on more sessions in this range.' });
+    const active = recent.leaders.length
+      ? { main: `${formatNames(recent.leaders.map((p) => p.playerName))} — ${recent.value}/${recentWindow || 10}`, sub: 'Setting the pace in recent sessions.' }
+      : (fallback.active || { main: 'No current candidate', sub: 'Try widening the date filter.' });
+    const newMemberCard = bestNewMember.leaders.length
+      ? { main: `${formatNames(bestNewMember.leaders.map((p) => p.playerName))} — ${bestNewMember.value}/${recentWindow || 10}`, sub: 'Strong early momentum since joining.' }
+      : (fallback.newMember || { main: 'No current candidate', sub: 'No eligible recent joiner in this range.' });
+    const comebackCard = (() => {
+      if (comeback) {
+        const missingWeeks = latestDate ? Math.max(1, Math.round(daysBetween(latestDate, comeback.lastAttendanceDate) / 7)) : 0;
+        return {
+          main: `${comeback.playerName} — Missing for ${missingWeeks} week${missingWeeks === 1 ? '' : 's'}`,
+          sub: `Last seen ${formatDate(comeback.lastAttendanceDate)}. Ready for a return.`,
+        };
+      }
+      return fallback.comeback || { main: 'No current candidate', sub: 'Waiting for a clear comeback storyline.' };
+    })();
+
+    const cards = [
+      { title: '🔥 Hot Streak', ...hot },
+      { title: '🎯 Most Active (Last 10)', ...active },
+      { title: '🌱 Best New Member', ...newMemberCard },
+      { title: '👀 Comeback Watch', ...comebackCard },
+    ];
+
+    el.innerHTML = cards.map((c) => `
       <article class="story-card">
         <div class="story-title">${c.title}</div>
         <div class="story-main">${c.main}</div>
@@ -355,17 +354,68 @@
     `).join('');
   }
 
+  function computeHighlightFallback() {
+    if (!state.rawRows.length) {
+      state.highlightFallback = null;
+      return;
+    }
+    const allSessions = buildSessions(state.rawRows, '', '');
+    const maxDate = allSessions[allSessions.length - 1]?.date;
+    if (!maxDate) return;
+    const from = new Date(new Date(maxDate).getTime() - (30 * 86400000)).toISOString().slice(0, 10);
+    const baselineSessions = buildSessions(state.rawRows, from, maxDate);
+    const baselinePlayers = buildPlayerStats(baselineSessions);
+    if (!baselineSessions.length || !baselinePlayers.length) return;
+
+    const recentWindow = Math.min(10, baselineSessions.length);
+    const latestIndex = baselineSessions.length - 1;
+    const latestDate = baselineSessions[latestIndex]?.date;
+    const streak = topBy(baselinePlayers, (p) => p.currentStreak, { minValue: 1 });
+    const recent = topBy(baselinePlayers, (p) => p.last10, { minValue: 1 });
+    const newMemberPool = baselinePlayers
+      .map((p) => ({ ...p, firstIdx: baselineSessions.findIndex((s) => s.date === p.firstAttendanceDate) }))
+      .filter((p) => p.firstIdx >= Math.max(0, baselineSessions.length - 12));
+    const bestNewMember = topBy(newMemberPool, (p) => p.last10, { minValue: 1 });
+    const comebackPool = baselinePlayers
+      .map((p) => ({ ...p, lastSeenIdx: baselineSessions.findIndex((s) => s.date === p.lastAttendanceDate) }))
+      .filter((p) => p.totalAttended >= 8 && p.lastSeenIdx >= 0 && (latestIndex - p.lastSeenIdx) >= 6)
+      .sort((a, b) => b.totalAttended - a.totalAttended || b.longestStreak - a.longestStreak);
+    const comeback = comebackPool[0];
+    const missingWeeks = comeback && latestDate ? Math.max(1, Math.round(daysBetween(latestDate, comeback.lastAttendanceDate) / 7)) : 0;
+
+    state.highlightFallback = {
+      hot: streak.leaders.length ? {
+        main: `${formatNames(streak.leaders.map((p) => p.playerName))} — ${streak.value} straight`,
+        sub: 'Carrying the best active run right now.',
+      } : null,
+      active: recent.leaders.length ? {
+        main: `${formatNames(recent.leaders.map((p) => p.playerName))} — ${recent.value}/${recentWindow || 10}`,
+        sub: 'Setting the pace in recent sessions.',
+      } : null,
+      newMember: bestNewMember.leaders.length ? {
+        main: `${formatNames(bestNewMember.leaders.map((p) => p.playerName))} — ${bestNewMember.value}/${recentWindow || 10}`,
+        sub: 'Strong early momentum since joining.',
+      } : null,
+      comeback: comeback ? {
+        main: `${comeback.playerName} — Missing for ${missingWeeks} week${missingWeeks === 1 ? '' : 's'}`,
+        sub: `Last seen ${formatDate(comeback.lastAttendanceDate)}. Ready for a return.`,
+      } : null,
+    };
+  }
+
   function renderAwards(players, sessions) {
     const el = $('#awardsGrid');
-    const recentWindow = Math.min(10, sessions.length);
     const hasHistory20 = sessions.length >= 20;
     const mostRegular = topBy(players, (p) => p.totalAttended, { minValue: 1 });
-    const ironStreak = topBy(players, (p) => p.longestStreak, { minValue: 1 });
-    const hotStreak = topBy(players, (p) => p.currentStreak, { minValue: 1 });
     const improvedPool = hasHistory20 ? players.filter((p) => p.improveDelta > 0) : [];
     const mostImproved = topBy(improvedPool, (p) => p.improveDelta, { minValue: 1 });
+    const mostConsistent = topBy(players.filter((p) => p.totalAttended >= 8), (p) => Number((p.attendanceRate * 100).toFixed(1)), { minValue: 1 });
+    const bestNewMemberPool = players
+      .map((p) => ({ ...p, firstIdx: sessions.findIndex((s) => s.date === p.firstAttendanceDate) }))
+      .filter((p) => p.firstIdx >= Math.max(0, sessions.length - 12));
+    const bestNewMemberAward = topBy(bestNewMemberPool, (p) => p.last10, { minValue: 1 });
 
-    // Assumption: Fast Starter = best attendance in first 5 sessions after joining.
+    // Assumption: Fast Starter = best attendance in first 5 sessions after joining, later joiners only.
     const fastStarterPool = players.map((p) => {
       const firstIdx = sessions.findIndex((s) => s.date === p.firstAttendanceDate);
       const windowStart = Math.max(0, firstIdx);
@@ -375,14 +425,12 @@
       for (let i = windowStart; i < windowEnd; i += 1) {
         if (sessions[i]?.players?.includes(p.playerName)) attended += 1;
       }
-      return { ...p, fastStarterScore: attended / eligible, fastStarterCount: attended };
-    }).filter((p) => p.fastStarterCount >= 3);
+      return { ...p, firstIdx, fastStarterScore: attended / eligible, fastStarterCount: attended };
+    }).filter((p) => p.fastStarterCount >= 3 && p.firstIdx >= Math.max(8, sessions.length - 24));
     const fastStarter = topBy(fastStarterPool, (p) => p.fastStarterScore, { minValue: 0.2 });
 
     const maxTotal = Math.max(1, ...players.map((p) => p.totalAttended));
     const mostRegularName = mostRegular.leaders[0]?.playerName;
-    const ironName = ironStreak.leaders[0]?.playerName;
-    const hotName = hotStreak.leaders[0]?.playerName;
     // Assumption: Quiet Contributor favors balanced strength (rate + volume + recent form) while avoiding headline winners if possible.
     const quietPool = players
       .filter((p) => p.totalAttended >= 10 && p.attendanceRate >= 0.45 && p.last10 >= 3)
@@ -391,7 +439,7 @@
         quietScore: 0.45 * p.attendanceRate + 0.35 * (p.totalAttended / maxTotal) + 0.2 * (p.last10 / 10),
       }))
       .sort((a, b) => b.quietScore - a.quietScore);
-    const quietWinner = quietPool.find((p) => ![mostRegularName, ironName, hotName].includes(p.playerName)) || quietPool[0];
+    const quietWinner = quietPool.find((p) => ![mostRegularName].includes(p.playerName)) || quietPool[0];
 
     const awards = [
       {
@@ -399,12 +447,6 @@
         winner: formatNames(mostRegular.leaders.map((p) => p.playerName)),
         stat: `${mostRegular.value || 0} sessions`,
         note: 'Still setting the pace.',
-      },
-      {
-        name: 'The Iron Paddle',
-        winner: formatNames(ironStreak.leaders.map((p) => p.playerName)),
-        stat: `${ironStreak.value || 0} in a row`,
-        note: 'Longest all-time consecutive run.',
       },
       {
         name: 'Most Improved',
@@ -419,16 +461,22 @@
         note: 'Best first five sessions after joining.',
       },
       {
+        name: 'Best New Member',
+        winner: formatNames(bestNewMemberAward.leaders.map((p) => p.playerName)),
+        stat: bestNewMemberAward.leaders.length ? `${bestNewMemberAward.value}/10 recent` : '—',
+        note: 'Strong early impact with steady momentum.',
+      },
+      {
         name: 'Quiet Contributor',
         winner: quietWinner?.playerName || '—',
         stat: quietWinner ? `${pct(quietWinner.attendanceRate)} rate • ${quietWinner.last10}/10 recent` : '—',
         note: 'Consistent impact without the spotlight.',
       },
       {
-        name: 'Current Hot Streak',
-        winner: formatNames(hotStreak.leaders.map((p) => p.playerName)),
-        stat: `${hotStreak.value || 0} straight`,
-        note: 'Active streak through the latest session.',
+        name: 'Most Consistent Presence',
+        winner: formatNames(mostConsistent.leaders.map((p) => p.playerName)),
+        stat: `${mostConsistent.value ? mostConsistent.value.toFixed(1) : '0.0'}% rate`,
+        note: 'Best attendance rate among regulars.',
       },
     ];
 
@@ -642,6 +690,7 @@
       const { attendanceRows, metaRows, sourceMode, sourceDetail } = await loadSheetsData();
       state.rawRows = inferRows(attendanceRows);
       state.syncLabel = readLastSyncLabel(metaRows);
+      computeHighlightFallback();
       setDataSourceStatus(sourceMode, sourceDetail);
 
       if (!state.rawRows.length) {
